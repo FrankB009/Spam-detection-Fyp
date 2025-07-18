@@ -1,70 +1,154 @@
+from datetime import date
 import streamlit as st
 import pandas as pd
+import re
+import string
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, classification_report
+import nltk
+from nltk.corpus import stopwords
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Sample training data for the machine
-training_data = {
-    'email':[
-        "Your account has been suspended, click here to verify",
-        "Free monet waiting for you, claim now",
-        "Update your bank information to avoid closure",
-        "Lets schedule our team meeting for you next week",
-        "Dont forget your appointment at 2 PM",
-        "Lunch with the cline tomorrow",
-        "Important: Review your security settings now",
-        "Urgent: Your email has been comprimised",
-        "Here's the monthy report your requested",
-        "Reminedr: Complete your training session"
-    ],
-    'label':[
-        'phishing', 'phishing', 'phishing',
-        'safe', 'safe', 'safe',
-        'phishing', 'phishing', 'safe', 'safe'
+
+#Download the NLTK stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+
+# load and cache the dataset
+@st.cache_data
+def load_data():
+    df = pd.read_csv("emails.csv")
+    # Normalise the column names
+    df.columns = [c.lower() for c in df.columns]
+    # Rename for consistency
+    if 'label' not in df.columns:
+        df.rename(columns={df.columns[-1]: 'label'}, inplace=True)
+    if 'text' not in df.columns:
+        df.rename(columns={df.columns[0]: 'text'}, inplace=True)
     
-    ]
-}
-df = pd.DataFrame(training_data)
+    label_map = {"ham": 0, "spam": 1}
+    if df['label'].dtype == object:
+        df['label'] = df['label'].str.lower().map(label_map)  
 
-# Model Pipeline
-model=Pipeline([
-    ('vectorizer', TfidfVectorizer(stop_words='english')),
-    ('classifier', MultinomialNB())
-])
-model.fit(df['email'], df['label'])
+    return df[['text', 'label']] 
 
-# UI for the page
-st.title("Email Phishing detector")
-st.markdown("Enter multiple emails to classify them as **safe** or **phishing**. ")
+    
+# Preprocessing the text
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(r"http\S+|www\S+", "", text)
+    text = re.sub(r"<.*?>", "", text)
+    text = re.sub(f"[{re.escape(string.punctuation)}]", "", text)
+    text = re.sub(r"\d+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    words = text.split()
+    filtered = [w for w in words if w not in stop_words]
+    return " ".join(filtered)
 
-user_inpt= st.text_area("Paste your email(s) here:", height=200)
-submit = st.button("Check Emails")
+#inject generic spam
+extra_spam = pd.DataFrame({
+         "text":[
+         "You've won a $1,000 gift card! Click here to claim your prize.",
+         "Verify your PayPal account now or it will be suspended!",
+         "URGENT: Update your bank information to avoid closure.",
+         "Congratulations! You have been selected as a lottery winner.",
+     ],
+     "label":[1,1,1,1]
+})
 
-if submit:
-    if not user_inpt.strip():
-        st.warning("Please enter at least one email")
-    else:
-        emails =[line.strip() for line in user_inpt.split('\n') if line.strip()]
-        safe_emails =[]
-        phishing_emails = []
+#Train the model
+@st.cache_resource
 
-        for idx, email in enumerate(emails, start=1):
-            label = model.predict([email])[0]
-            result = f"{idx}. {email}"
-            if label == 'safe':
-                safe_emails.append(result)
-            else:
-                phishing_emails.append(result)
+def train_model(data):
+    data = data.dropna(subset=['text','label'])
+    data['clean_text'] = data['text'].apply(clean_text)
+    data = data[data['clean_text'].str.strip()!= ""]
+   
+    X_train, X_test, y_train, y_test = train_test_split(
+       data['clean_text'], data['label'], test_size=0.2, random_state=42, stratify=data['label']
+   )
 
-        if safe_emails:
-            st.subheader("Safe Emails")
-            for item in safe_emails:
-                st.markdown(f"-{item}")
+    model = Pipeline([
+        ('tfidf', TfidfVectorizer(stop_words='english')),
+        ('clf',MultinomialNB())
+     ])
+
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    return model, acc
+
+#The Streamlit UI
+st.title("Spam Email Classifier")
+st.markdown("Sort email dataset")
+
+data = load_data()
+
+# Plot of distribution- bar chart
+fig, ax = plt.subplots()
+sns.countplot(data=data, x='label', palette='viridis', ax=ax)
+ax.set_title('Email class Distribution')
+ax.set_xlabel('Label (Ham = 0, Spam = 1)')
+ax.set_ylabel('Count')
+
+st.pyplot(fig)
+
+model, acc = train_model(data)
+
+st.success(f" Model is trained with accuracy of: {acc:.2f}")
+
+st.subheader("Classification Report")
+
+#pie chart
+st.subheader("Email class Proportions")
+
+label_counts = data['label'].value_counts()
+labels  = ['Ham(0)', 'Spam(1)']
+sizes = [label_counts[0], label_counts[1]]
+colors = ["#4000ff", "#f50a0a"]
+
+fig2,ax2 = plt.subplots()
+ax2.pie(
+    sizes,
+    labels = labels,
+    colors = colors,
+     autopct='%1.1f%%',
+    startangle=90,
+    textprops={'fontsize': 12}
+)
+ax2.axis('equal')
+st.pyplot(fig2)
 
 
-        if phishing_emails:
-            st.subheader("Phishing Emails")
-            for item in phishing_emails:
-                st.markdown(f"-{item}")        
+# Classifying the dataset
+data['clean_text'] = data['text'].apply(clean_text)
+data = data[data['clean_text'].str.strip() != ""]
+data['prediction'] = model.predict(data['clean_text'])
+
+spam_emails = data[data['prediction'] != 1]
+ham_emails = data[data['prediction'] != 0]
+
+st.subheader("Spam Emails")
+st.write(spam_emails[['text']].reset_index(drop=True))
+
+st.subheader("Legitimate Emails")
+st.write(ham_emails[['text']].reset_index(drop=True))
+
+# Sidebar for custom email prediction
+st.sidebar.header("Try a Custom Email")
+user_input = st.sidebar.text_area("Enter Email text here")
+if user_input:
+    cleaned = clean_text(user_input)
+    prediction = model.predict([cleaned])[0]
+    proba = model.predict_proba([cleaned])[0]
+
+    st.sidebar.write(f"prediction: **{'Spam' if prediction == 1 else 'Legitimate'}**")
+    st.sidebar.write(f"Confidence- Legitimate: {proba[0]:.2f}, Spam: {proba[1]:.2f}")
+    
 
