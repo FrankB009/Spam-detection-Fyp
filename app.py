@@ -86,44 +86,59 @@ def train_model(data):
 
 #The Streamlit UI
 st.title("Spam Email Classifier")
-st.markdown("Sort email dataset")
 
 data = load_data()
 
-# Plot of distribution- bar chart
-fig, ax = plt.subplots()
-sns.countplot(data=data, x='label', palette='viridis', ax=ax)
-ax.set_title('Email class Distribution')
-ax.set_xlabel('Label (Ham = 0, Spam = 1)')
-ax.set_ylabel('Count')
+st.subheader("Data Summary")
 
-st.pyplot(fig)
+unique_texts = data['text'].nunique()
 
-model, acc = train_model(data)
+most_common_spam =(
+    data[data['label'] == 1]['text']
+    .value_counts()
+    .idxmax()
+)
 
-st.success(f" Model is trained with accuracy of: {acc:.2f}")
 
-st.subheader("Classification Report")
 
-#pie chart
-st.subheader("Email class Proportions")
+st.markdown(f"- **Total unique email texts**: {unique_texts}")
+st.markdown(f"- Most frequent spam message: \n\n> {most_common_spam}")
 
-label_counts = data['label'].value_counts()
-labels  = ['Ham(0)', 'Spam(1)']
-sizes = [label_counts[0], label_counts[1]]
-colors = ["#4000ff", "#f50a0a"]
 
-fig2,ax2 = plt.subplots()
-ax2.pie(
+model , acc = train_model(data)
+
+st.subheader("Email Distribution: Bar and pie Chart")
+
+col1,col2 = st.columns(2)
+
+with col1:
+    st.markdown("### Bar Chart")
+    fig, ax = plt.subplots(figsize =(5,5))
+    sns.countplot(data=data, x='label', palette = 'viridis', ax = ax)
+    ax.set_title('Email Class Distribution')
+    ax.set_xlabel('Label(Ham = 0, Spam = 1)')
+    ax.set_ylabel('Count')
+    st.pyplot(fig)
+
+with col2:
+    st.markdown("### Pie Chart")
+    label_counts = data['label'].value_counts()
+    labels = ['Ham(0)', 'Spam(1)']
+    sizes = [label_counts[0], label_counts[1]]
+    colors = ["#002AFF", "#ff0000"]
+
+    fig2, ax2 = plt.subplots(figsize = (5,5))
+    ax2.pie(
     sizes,
     labels = labels,
     colors = colors,
-     autopct='%1.1f%%',
-    startangle=90,
-    textprops={'fontsize': 12}
+    autopct ='%1.1f%%',
+    startangle = 90,
+    textprops = {'fontsize': 12}
 )
-ax2.axis('equal')
-st.pyplot(fig2)
+
+    ax2.axis('equal')
+    st.pyplot(fig2)
 
 
 # Classifying the dataset
