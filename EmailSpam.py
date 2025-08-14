@@ -1,6 +1,7 @@
 from datetime import date
 import streamlit as st
 import pandas as pd
+import numpy as np
 import re
 import string
 import time
@@ -74,6 +75,10 @@ def train_models(data):
     data = data.dropna(subset=['text', 'label'])
     data['clean_text'] = data['text'].apply(clean_text)
     data = data[data['clean_text'].str.strip() != ""]
+
+    noise_fraction = 0.03
+    flip_indices = np.random.choice(data.index, int(len(data)* noise_fraction), replace=False)
+    data.loc[flip_indices, 'label'] = 1 - data.loc[flip_indices, 'label']
 
     X_train, X_test, y_train, y_test = train_test_split(
         data['clean_text'], data['label'], test_size = 0.2, random_state=42, stratify=data['label'] 
