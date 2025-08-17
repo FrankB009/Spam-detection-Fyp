@@ -30,19 +30,13 @@ stop_words = set(stopwords.words('english'))
 @st.cache_data
 def load_data():
     df = pd.read_csv("emails.csv")
-    # Normalise the column names
-    df.columns = [c.lower() for c in df.columns]
-    # Rename for consistency
-    if 'label' not in df.columns:
-        df.rename(columns={df.columns[-1]: 'label'}, inplace=True)
-    if 'text' not in df.columns:
-        df.rename(columns={df.columns[0]: 'text'}, inplace=True)
-    
-    label_map = {"ham": 0, "spam": 1}
-    if df['label'].dtype == object:
-        df['label'] = df['label'].str.lower().map(label_map)  
+   #Standerdize column names
+    df.rename(columns = {"Category": "label", "Masseges": "text"}, inplace=True)
 
-    return df[['text', 'label']] 
+   #Make labels intergers
+    df['label'] = df['label'].astype(int)
+    return df[['text','label']]
+
 
     
 # Preprocessing the text
@@ -76,9 +70,6 @@ def train_models(data):
     data['clean_text'] = data['text'].apply(clean_text)
     data = data[data['clean_text'].str.strip() != ""]
 
-    noise_fraction = 0.03
-    flip_indices = np.random.choice(data.index, int(len(data)* noise_fraction), replace=False)
-    data.loc[flip_indices, 'label'] = 1 - data.loc[flip_indices, 'label']
 
     X_train, X_test, y_train, y_test = train_test_split(
         data['clean_text'], data['label'], test_size = 0.2, random_state=42, stratify=data['label'] 
